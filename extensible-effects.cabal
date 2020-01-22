@@ -129,6 +129,7 @@ library
                      , transformers-base == 0.4.*
                        -- For MonadBaseControl
                      , monad-control >= 1.0 && < 1.1
+                     , haskus-utils-variant >= 3.0 && < 4.0
 
   -- Directories containing source files.
   hs-source-dirs:      src

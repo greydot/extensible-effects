@@ -6,7 +6,9 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE Safe #-}
+-- {-# LANGUAGE Safe #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE PatternSynonyms #-}
 -- | Exception-producing and exception-handling effects
 module Control.Eff.Exception ( Exc (..)
                             , exc
@@ -25,6 +27,9 @@ module Control.Eff.Exception ( Exc (..)
                             , liftMaybe
                             , liftMaybeM
                             , ignoreFail
+                            , Result
+                            , pattern Error
+                            , pattern Result
                             ) where
 
 import Control.Eff
@@ -35,6 +40,12 @@ import Control.Monad.Base
 import Control.Monad.Trans.Control
 
 import Data.Function (fix)
+import Data.Proxy
+
+import GHC.TypeNats
+import Haskus.Utils.Variant.VEither (V, VEither, pattern VLeft, pattern VRight)
+
+import Unsafe.Coerce (unsafeCoerce)
 
 -- ------------------------------------------------------------------------
 -- | Exceptions
@@ -143,3 +154,53 @@ ignoreFail :: Eff (Fail ': r) a
            -> Eff r ()
 ignoreFail e = void e `onFail` return ()
 {-# INLINE ignoreFail #-}
+
+-- | Result is similar to 'Either' but with a polymorphic variant type on the left.
+-- FIXME: Consider rewriting this instead of using haskus packages to avoid dependency bloat.
+type Result errs a = VEither errs a
+
+pattern Error :: forall (errs :: [*]) a. V errs -> Result errs a
+pattern Error e <- VLeft e
+
+pattern Result :: forall (errs :: [*]) a. a -> Result errs a
+pattern Result a <- VRight a
+
+type family Exceptions xs where
+  Exceptions '[] = '[]
+  Exceptions (Exc e ': xs) = (e ': Exceptions xs)
+
+type family NonExceptions xs where
+  NonExceptions '[] = '[]
+  NonExceptions (Exc e ': xs) = NonExceptions xs
+  NonExceptions (x ': xs) = (x ': NonExceptions xs)
+
+type family Length xs :: Nat where
+  Length '[] = 0
+  Length (x ': xs) = 1 + Length xs
+
+type family (++) xs ys where
+  (++) '[] ys = ys
+  (++) (x ': xs) ys = x ': (xs ++ ys)
+
+type family Reverse xs where
+  Reverse '[] = '[]
+  Reverse (x ': xs) = Reverse xs ++ '[x]
+
+type family ConstructEithers es a where
+  ConstructEithers '[] a = a
+  ConstructEithers (e ': es) a = Either e (ConstructEithers es a)
+
+type family ConstructResult es where
+  ConstructResult (Either e (Either e' a)) = a
+  -- FIXME: Add inner loop
+
+runErrors :: forall rest numErrs errs r a.
+           ( rest ~ NonExceptions r
+           , errs ~ Exceptions r
+           , numErrs ~ Length errs
+           , KnownNat numErrs
+           ) => Eff r a -> Eff rest (Result errs a)
+runErrors = undefined
+  where chain :: Eff r a -> Eff rest (ConstructEithers (Reverse errs) a)
+        chain = foldr (.) id (replicate n runError)
+        n = fromIntegral $ natVal (Proxy :: Proxy numErrs)

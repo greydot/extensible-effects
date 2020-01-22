@@ -1,9 +1,13 @@
-resolver: lts-13.1
+resolver: nightly-2020-01-21
+#resolver: lts-14.18
 
 packages:
 - '.'
 
-extra-deps: []
+extra-deps:
+- haskus-utils-data-1.2
+- haskus-utils-types-1.5
+- haskus-utils-variant-3.0
 
 flags:
   extensible-effects:
